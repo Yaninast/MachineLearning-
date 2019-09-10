@@ -1,0 +1,829 @@
+title: "Yanina_Strylets.Assignment_2"
+output: word_document
+---
+BONUS_POINTS - CHUNK 34 - BORUTA RF - 10 
+               CHUNK 38 - CROSS- VALIDATION -  10 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+# Load Data
+```{r}
+setwd("C:\\Users\\yanin\\Desktop\\MSDS 411\\S19-W-unit 2 weeks 4 to 6\\W-unit 2 weeks 4 to 6\\Unit 2 - Insurance\\4 Homework")
+data<- read.csv('logit_insurance.csv', header = T)
+
+```
+#b. Install necessary libraries 
+```{r}
+library(rJava)
+library(xlsxjars)
+library(xlsx)
+
+library(readr)
+library(pbkrtest)
+library(car)
+library(leaps)
+library(MASS)
+
+library(kableExtra)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(psych)
+library(flux)
+library(gridExtra)
+library(moments)
+library(rockchalk)
+library(RColorBrewer)
+require(RColorBrewer)
+
+library(readr)
+library(zoo)
+library(psych)
+library(ROCR)
+library(corrplot)
+library(InformationValue)
+library(pbkrtest)
+library(glm2)
+library(aod)
+library(rpart)
+library(tidyverse)
+library(broom)
+
+
+.rs.restartR()
+
+
+```
+#Get discriptive statistics 
+```{r}
+head(data)
+summary(data)
+str(data)
+```
+#Response variable
+```{r}
+response_table <- table(data$TARGET_FLAG)
+prop.table(response_table)
+
+```
+
+# Need to make sure our data is understood correctly by R, since we have a mix of numerical and categorical
+```{r}
+data$INDEX <- as.factor(data$INDEX)
+data$TARGET_FLAG <- as.factor(data$TARGET_FLAG)
+data$SEX <- as.factor(data$SEX)
+data$EDUCATION <- as.factor(data$EDUCATION)
+data$PARENT1 <- as.factor(data$PARENT1)
+data$INCOME <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$INCOME)))
+
+data$HOME_VAL <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$HOME_VAL)))
+data$MSTATUS <- as.factor(data$MSTATUS)
+data$REVOKED <- as.factor(data$REVOKED)
+data$RED_CAR <- as.factor(ifelse(data$RED_CAR=="yes", 1, 0))
+data$URBANICITY <- ifelse(data$URBANICITY == "Highly Urban/ Urban", "Urban", "Rural")
+data$URBANICITY <- as.factor(data$URBANICITY)
+data$JOB <- as.factor(data$JOB)
+data$CAR_USE <- as.factor(data$CAR_USE)
+data$CAR_TYPE <- as.factor(data$CAR_TYPE)
+data$DO_KIDS_DRIVE <- as.factor(ifelse(data$KIDSDRIV > 0, 1, 0 ))
+data$OLDCLAIM <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$HOME_VAL)))
+data$BLUEBOOK <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", data$BLUEBOOK)))
+summary(data)
+str(data)
+```
+# Explore percentage of missing values in variables 
+```{r}
+pMiss <- function(x){sum(is.na(x))/length(x)*100}
+apply(data,2,pMiss)
+
+
+```
+# Identify outliers and extreme outliers 
+```{r}
+lapply(numeric, function(x) boxplot.stats(x)$out)
+lapply(numeric, function(x) boxplot.stats(x, coef= 3)$out)
+
+```
+# Impute missing values. rpart imputation 
+```{r}
+
+set.seed(5)
+
+data$CAR_AGE[data$CAR_AGE < 0 ] <- 0 # impute negative car_age record 
+data <- subset(data, select = - c(INDEX))
+
+r_carAge <- rpart(CAR_AGE ~ .,
+data=data[!is.na(data$CAR_AGE),]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+carAge_PRED <- predict(r_carAge, data[is.na(data$CAR_AGE), ])
+data$CAR_AGE[is.na(data$CAR_AGE)]= carAge_PRED
+
+r_YOJ <- rpart(YOJ ~ .,
+data=data[!is.na(data$YOJ),]
+,method="anova", na.action=na.omit,control = rpart.control(cp = 0.0001))
+YOJ_PRED <- predict(r_YOJ, data[is.na(data$YOJ), ])
+data$YOJ[is.na(data$YOJ)]= YOJ_PRED
+
+r_INCOME <- rpart(INCOME ~ .,
+data=data[!is.na(data$INCOME),]
+,method="anova", na.action=na.omit,control = rpart.control(cp = 0.0001))
+INCOME_PRED <- predict(r_INCOME, data[is.na(data$INCOME), ])
+data$INCOME[is.na(data$INCOME)]= INCOME_PRED
+
+r_HOME_VAL<- rpart(HOME_VAL ~ .,
+data=data[!is.na(data$HOME_VAL),]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+HOME_VAL_PRED <- predict(r_HOME_VAL, data[is.na(data$HOME_VAL), ])
+data$HOME_VAL[is.na(data$HOME_VAL)]= HOME_VAL_PRED
+
+
+r_OLDCLAIM<- rpart(OLDCLAIM ~ .,
+data=data[!is.na(data$OLDCLAIM),]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+OLDCLAIM_PRED <- predict(r_OLDCLAIM, data[is.na(data$OLDCLAIM), ])
+data$OLDCLAIM[is.na(data$OLDCLAIM)]= OLDCLAIM_PRED
+
+r_AGE<- rpart(AGE ~ .,
+data=data[!is.na(data$AGE),]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+AGE_PRED <- predict(r_AGE, data[is.na(data$AGE), ])
+data$AGE[is.na(data$AGE)]= AGE_PRED
+
+apply(data, 2, function(x) sum(is.na(x))) # check if NA's are gone 
+colSums(is.na(data)|data == ''| data < 0 | data == "NaN")
+data[which(data$CAR_AGE < 0),]
+```
+#Create a copy of the data
+
+```{r}
+post_data<- data[c(-1)]
+summary(data)
+
+```
+#Create numeric and categorical subsets of data 
+```{r}
+categorical<- subset(data, select = -c(TARGET_AMT, AGE, HOMEKIDS, YOJ, INCOME, HOME_VAL, TRAVTIME, BLUEBOOK, TIF, CLM_FREQ, MVR_PTS, CAR_AGE, OLDCLAIM))
+numeric <- subset(data, select = c(TARGET_AMT, AGE, HOMEKIDS, YOJ, INCOME, HOME_VAL, TRAVTIME, BLUEBOOK, TIF, CLM_FREQ, MVR_PTS, CAR_AGE, OLDCLAIM))
+describe(numeric)
+str(categorical)
+```
+#Univariate analysis. Numeric data
+```{r}
+count_i<- 1
+for(column in numeric){
+  print(ggplot(data, aes(x=column)) + 
+    geom_histogram(color="black") +
+    ggtitle(sprintf("Distribution of %s",names(numeric[count_i])))+
+    xlab(sprintf("%s",names(numeric[count_i])))+
+    theme(plot.title=element_text(lineheight=0.8, face="bold", hjust=0.5)))
+  count_i = count_i+1 
+  }
+```
+# Univariate analysis. Categorical variables 
+```{r}
+count_i<- 1
+for(column in categorical){
+  print(ggplot(categorical, aes(x=column)) + 
+    geom_bar( fill= "tomato2", stat="count") +
+    ggtitle(sprintf("Distribution of %s",names(categorical[count_i])))+
+    xlab(sprintf("%s",names(categorical[count_i])))+
+    theme(plot.title=element_text(lineheight=0.8, face="bold", hjust=0.5)))
+  count_i = count_i+1 
+  }
+```
+# Bivariate analysis. Numeric variables 
+```{r}
+count_i<- 1
+
+for(column in numeric){
+  print(ggplot(data, aes(x=TARGET_FLAG, y= column)) + 
+    geom_boxplot(color = 'blue') +
+    ggtitle(sprintf("BoxPlot of TARGET_FLAG vs %s",names(numeric[count_i])))+
+    ylab(sprintf("%s",names(numeric[count_i])))+
+    stat_smooth()+
+    theme(plot.title=element_text(lineheight=0.8, face="bold", hjust=0.5)))
+  count_i = count_i+1 
+}
+
+```
+#Corplot. Check multicollinearity 
+```{r}
+require(GGally)
+ggpairs(numeric)
+```
+#Corplot PerformanceAnalytics package 
+```{r}
+library(PerformanceAnalytics)
+
+chart.Correlation(numeric,
+                  method="pearson",
+                  histogram=TRUE,
+                  pch=16)
+```
+#Exclude TARGET_AMT
+```{r}
+data<- subset(data, select = -c(TARGET_AMT))
+numeric<- subset(numeric, select = -c(TARGET_AMT))
+```
+#Linearity assumption
+```{r}
+library(tidyverse)
+library(broom)
+theme_set(theme_classic())
+
+# Fit the logistic regression model
+model <- glm(TARGET_FLAG ~., data = data, 
+               family = binomial()) # full model
+probabilities <- predict(model, type = "response")
+# Bind the logit and tidying the data for plot
+predictors <- colnames(numeric)
+mydata <- numeric %>%
+  mutate(logit = log(probabilities/(1-probabilities))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+
+```
+# Check linear relationship of logit of a response variable and predictor 
+```{r}
+ggplot(mydata, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+
+```
+# Frequency tables
+```{r}
+#HOMEKIDS
+table_HOMEKIDS<- table(data$HOMEKIDS)
+prop.table(table_HOMEKIDS)*100
+
+#JOB
+table_JOB <-  table(data$JOB)
+prop.table(table_JOB)*100
+
+#TIF 
+table_TIF<- table(data$TIF)
+prop.table(table_TIF)*100
+
+#CLM_FREQ
+table_CLM_FREQ<- table(data$CLM_FREQ)
+prop.table(table_CLM_FREQ)*100
+```
+# Transform variables 
+```{r}
+data$SQRT_TRAVTIME <- sqrt(data$TRAVTIME)
+data$SQRT_BLUEBOOK <- sqrt(data$BLUEBOOK)
+data$CAR_AGE_norm<- (data$CAR_AGE-min(data$CAR_AGE))/(max(data$CAR_AGE)-min(data$CAR_AGE))
+data$OLDCLAIM_norm<-(data$OLDCLAIM-min(data$OLDCLAIM))/(max(data$OLDCLAIM)-min(data$OLDCLAIM))
+```
+#Create new variables 
+```{r}
+data$HOME_OWNER <- ifelse(data$HOME_VAL == 0, 0, 1)
+data$CLM_FREQ_bool<- ifelse(data$CLM_FREQ == 0, 0, 1)
+data$risk_customer<- ifelse(data$TIF<= 5 & data$CLM_FREQ>0,1,0)
+```
+#Bin variables 
+```{r}
+# Bin Income
+
+data$INCOME_bin[data$INCOME == 0] <- "Zero"
+data$INCOME_bin[data$INCOME >= 1 & data$INCOME < 30000] <- "Low"
+data$INCOME_bin[data$INCOME >= 30000 & data$INCOME < 80000] <- "Medium"
+data$INCOME_bin[data$INCOME >= 80000] <- "High"
+data$INCOME_bin <- factor(data$INCOME_bin)
+data$INCOME_bin <- factor(data$INCOME_bin, levels=c("Zero","Low","Medium","High"))
+summary(data$INCOME_bin)
+
+#Bin HOME_KIDS 
+
+data$HOMEKIDS_bin[data$HOMEKIDS == 0] <- "Zero"
+data$HOMEKIDS_bin[data$HOMEKIDS >= 1 & data$HOMEKIDS <=2] <- "1 or 2"
+data$HOMEKIDS_bin[data$HOMEKIDS > 2] <- "More_than_2"
+data$HOMEKIDS_bin <- factor(data$HOMEKIDS_bin)
+data$HOMEKIDS_bin <- factor(data$HOMEKIDS_bin, levels=c("Zero","1 or 2","More_than_2"))
+summary(data$HOMEKIDS_bin)
+
+#Bin YOJ 
+
+data$YOJ_bin[data$YOJ == 0] <- "Less than year"
+data$YOJ_bin[data$YOJ >= 1 & data$YOJ <= 10] <- "1-10 years"
+data$YOJ_bin[data$YOJ > 10 & data$YOJ < 13] <- "11-12 years"
+data$YOJ_bin[data$YOJ >= 13] <-"13 or more years"
+data$YOJ_bin <- factor(data$YOJ_bin)
+data$YOJ_bin <- factor(data$YOJ_bin, levels=c("Less than year","1-10 years","11-12 years","13 or more years"))
+summary(data$YOJ_bin)
+
+#Bin TIF 
+
+data$TIF_bin[data$TIF > 0 & data$TIF <= 1] <-"Z_NEW_Customer"
+data$TIF_bin[data$TIF > 1 & data$TIF < 7] <-"1-6yr_customer"
+data$TIF_bin[data$TIF >= 7]<-"7 or more yr"
+data$TIF_bin <- factor(data$TIF_bin)
+data$TIF_bin <- factor(data$TIF_bin, levels=c("Z_NEW_Customer","1-6yr_customer","7 or more yr"))
+summary(data$TIF_bin)
+
+
+#Bin CLM_FREQ
+
+data$CLM_FREQ_bin[data$CLM_FREQ == 0] <- "Z_NONE"
+data$CLM_FREQ_bin[data$CLM_FREQ == 1] <- "ONE"
+data$CLM_FREQ_bin[data$CLM_FREQ ==2] <- "TWO"
+data$CLM_FREQ_bin[data$CLM_FREQ >=3] <-"3 or more clm"
+data$CLM_FREQ_bin <- factor(data$CLM_FREQ_bin)
+data$CLM_FREQ_bin <- factor(data$CLM_FREQ_bin,levels=c("Z_NONE","ONE","TWO","3 or more clm"))
+summary(data$CLM_FREQ_bin)
+
+# Regroup JOB variable  
+data$JOB_imp<- combineLevels(data$JOB, levs = c("Doctor", "Lawyer"), newLabel= "White Collar")
+levels(data$JOB_imp)[1] <-"OTHER"
+summary(data$JOB_imp)
+
+```
+
+# Influencial observations. Cook's distance  
+```{r}
+plot(model, which = 4, id.n = 3)# Cook's distance plot 
+```
+# The data for the top 3 largest values, according to the Cook’s distance
+```{r}
+# Extract model results
+model.data <- augment(model) %>% 
+  mutate(index = 1:n()) 
+model.data %>% top_n(3, .cooksd) 
+```
+#Plot the standardized residuals:
+```{r}
+ggplot(model.data, aes(index, .std.resid)) + 
+  geom_point(aes(color = TARGET_FLAG), alpha = .5) +
+  theme_bw()
+
+```
+#Filter potential influential data points with abs(.std.res) > 3
+```{r}
+model.data %>% 
+  filter(abs(.std.resid) > 3)
+```
+# Model Development. Automatic variable selection. 
+# Stepwise variable selection. Transformed data 
+```{r}
+stepwisemodel <- glm(TARGET_FLAG ~ KIDSDRIV + AGE + PARENT1 + 
+    HOME_VAL + MSTATUS + SEX + EDUCATION + CAR_USE + CAR_TYPE + RED_CAR + 
+    REVOKED + I(MVR_PTS^2) + CAR_AGE + URBANICITY + DO_KIDS_DRIVE + 
+    SQRT_TRAVTIME + SQRT_BLUEBOOK + CAR_AGE + OLDCLAIM + 
+    HOME_OWNER + CLM_FREQ_bool + risk_customer + INCOME_bin + 
+    HOMEKIDS_bin + YOJ_bin + TIF_bin + CLM_FREQ_bin + JOB_imp+ 
+    AGE*SQRT_BLUEBOOK+CAR_TYPE*AGE*SQRT_BLUEBOOK+ CAR_TYPE*RED_CAR, data = data, family = binomial)
+stepwise <- stepAIC(stepwisemodel, direction = "both")
+summary(stepwise)
+```
+# FORWARD VARIABLE SELECTION
+```{r}
+upper.lm<- glm(TARGET_FLAG ~ KIDSDRIV + AGE + PARENT1 + 
+    HOME_VAL + MSTATUS + SEX + EDUCATION + CAR_USE + CAR_TYPE + RED_CAR + 
+    REVOKED + I(MVR_PTS^2) + URBANICITY + DO_KIDS_DRIVE + 
+    SQRT_TRAVTIME + SQRT_BLUEBOOK + CAR_AGE + OLDCLAIM + 
+    HOME_OWNER + CLM_FREQ_bool + risk_customer + INCOME_bin + 
+    HOMEKIDS_bin + YOJ_bin + TIF_bin + CLM_FREQ_bin + JOB_imp + 
+    AGE*SQRT_BLUEBOOK+CAR_TYPE*AGE*SQRT_BLUEBOOK+ CAR_TYPE*RED_CAR+OLDCLAIM*TIF, data = data, family = binomial)
+summary(upper.lm)
+
+lower.lm <- glm(TARGET_FLAG ~ 1, data = data, family=binomial)
+summary(lower.lm)
+
+forward.lm <- stepAIC(object=lower.lm,scope=list(upper=upper.lm,lower=lower.lm),
+                      direction=c('forward'));
+summary(forward.lm)
+```
+#BACKWARD VARIABLE SELECTION
+```{r}
+backward.lm <- stepAIC(object=upper.lm,direction=c('backward'));
+summary(backward.lm)
+
+```
+# RANDOM FOREST FEATURE SELECTION. BINGO POINTS 5 
+```{r}
+library(randomForest)
+fit_rf = randomForest(TARGET_FLAG~., data=data)
+# Create an importance based on mean decreasing gini
+importance(fit_rf)
+
+```
+# Extract variables' importance using caret() and compare with random forest results 
+```{r}
+library(caret)
+# compare the feature importance with varImp() function
+varImp(fit_rf)
+ 
+# Create a plot of importance scores by random forest
+varImpPlot(fit_rf)
+```
+#Model based on Random Forest feature importance selection. rf.m
+```{r}
+rf.m<- glm(TARGET_FLAG ~ AGE + HOME_VAL + EDUCATION  + CAR_TYPE +  
+    I(MVR_PTS^2) + URBANICITY + SQRT_TRAVTIME + SQRT_BLUEBOOK + CAR_AGE + OLDCLAIM + INCOME_bin + 
+    CLM_FREQ_bin + JOB_imp, data = data, family = binomial)
+summary(rf.m)
+```
+#Using Boruta algorthm to compare results obtained with random forest. BINGO POINTS 10 
+```{r}
+library(Boruta)
+set.seed(111)
+x <- data[,-1]
+y <- data$TARGET_FLAG
+boruta.bank <- Boruta(y~.,data = x, doTrace = 2)
+print(boruta.bank)
+
+```
+#Fix tentative attributes 
+```{r}
+boruta.bank_tnt <- TentativeRoughFix(boruta.bank)
+print(boruta.bank_tnt)
+
+```
+#Boruta important attributes 
+```{r}
+getSelectedAttributes(boruta.bank, withTentative = F)
+bank_df <- attStats(boruta.bank)
+print(bank_df) 
+```
+# Model 5. USe some observations from feature importance analysis in Random_Forest() and apply it to backward variable selection. backward_rf
+```{r}
+
+test<- glm(TARGET_FLAG ~ KIDSDRIV + AGE + PARENT1 + HOME_VAL + 
+    MSTATUS + SEX + EDUCATION + CAR_USE + CAR_TYPE + RED_CAR + 
+    REVOKED + I(MVR_PTS^2) + URBANICITY + DO_KIDS_DRIVE + SQRT_TRAVTIME + 
+    SQRT_BLUEBOOK + CAR_AGE_norm + OLDCLAIM + HOME_OWNER + CLM_FREQ_bool + 
+    risk_customer + INCOME + HOMEKIDS_bin + YOJ_bin + TIF_bin + 
+    CLM_FREQ + JOB_imp + AGE * SQRT_BLUEBOOK + CAR_TYPE * 
+    AGE * SQRT_BLUEBOOK + CAR_TYPE * RED_CAR + OLDCLAIM * TIF+ OLDCLAIM * CAR_TYPE+OLDCLAIM * CLM_FREQ,
+    family = binomial, data = data)
+backward_rf<- stepAIC(object=test,direction=c('backward'));
+summary(backward_rf)
+
+```
+#Crossvalidation. 1. Stepwise model. BINGO PONITS 10 
+```{r}
+
+Train <- createDataPartition(data$TARGET_FLAG, p=0.7, list=FALSE)
+training <- data[ Train, ]
+testing <- data[ -Train, ]
+
+# Stepwise model 
+
+ctrl <- trainControl(method = "repeatedcv", number = 10, savePredictions = TRUE)
+
+model_fit_stepwise <- train(TARGET_FLAG ~ KIDSDRIV + AGE + PARENT1 + 
+    HOME_VAL + MSTATUS + SEX + EDUCATION + CAR_USE + CAR_TYPE + RED_CAR + 
+    REVOKED + I(MVR_PTS^2) + CAR_AGE + URBANICITY + DO_KIDS_DRIVE + 
+    SQRT_TRAVTIME + SQRT_BLUEBOOK + CAR_AGE + OLDCLAIM + 
+    HOME_OWNER + CLM_FREQ_bool + risk_customer + INCOME_bin + 
+    HOMEKIDS_bin + YOJ_bin + TIF_bin + CLM_FREQ_bin + JOB_imp+ 
+    AGE*SQRT_BLUEBOOK+CAR_TYPE*AGE*SQRT_BLUEBOOK+ CAR_TYPE*RED_CAR, data = data, method="glm", family="binomial", trControl = ctrl, tuneLength = 5)
+
+x<- as.data.frame(model_fit_stepwise[4])
+
+pred_stepwise = predict(mod_fit_stepwise, newdata=testing)
+confusionMatrix(data=pred_stepwise, testing$TARGET_FLAG)
+
+```
+#Crossvalidation. 2. Forward model 
+```{r}
+#Forward model
+
+model_fit_forward <- train(TARGET_FLAG ~ URBANICITY + JOB_imp + I(MVR_PTS^2) + 
+    MSTATUS + CAR_TYPE + REVOKED + DO_KIDS_DRIVE + INCOME_bin + 
+    CAR_USE + SQRT_TRAVTIME + risk_customer + SQRT_BLUEBOOK + 
+    TIF + CLM_FREQ_bool + HOMEKIDS_bin + EDUCATION + HOME_OWNER + 
+    PARENT1 + KIDSDRIV + CAR_TYPE:SQRT_BLUEBOOK, 
+    data = data, method="glm", family="binomial",
+                 trControl = ctrl, tuneLength = 5)
+x_2<-as.data.frame(model_fit_forward[4])
+
+pred_forward = predict(model_fit_forward, newdata=testing)
+confusionMatrix(data=pred_forward, testing$TARGET_FLAG)
+
+
+```
+#Crossvalidation. 3. Backward model
+```{r}
+model_fit_backward <- train(TARGET_FLAG ~ KIDSDRIV + AGE + PARENT1 + MSTATUS + 
+    EDUCATION + CAR_USE + CAR_TYPE + REVOKED + I(MVR_PTS^2) + 
+    URBANICITY + SQRT_TRAVTIME + SQRT_BLUEBOOK + HOME_OWNER + 
+    INCOME_bin + HOMEKIDS_bin + CLM_FREQ_bin + JOB_imp + TIF + 
+    AGE:SQRT_BLUEBOOK + AGE:CAR_TYPE + CAR_TYPE:SQRT_BLUEBOOK,
+    data = data, method="glm", family="binomial",
+                 trControl = ctrl, tuneLength = 5)
+
+x_3<-as.data.frame(model_fit_backward[4])
+
+pred_backward = predict(model_fit_backward, newdata=testing)
+confusionMatrix(data=pred_backward, testing$TARGET_FLAG)
+
+```
+# Crossvalidation. 4. Random_forest model 
+```{r}
+model_fit_rf <- train(TARGET_FLAG ~ AGE + HOME_VAL + EDUCATION  + CAR_TYPE +  
+    I(MVR_PTS^2) + URBANICITY + SQRT_TRAVTIME + SQRT_BLUEBOOK + CAR_AGE + OLDCLAIM + INCOME_bin + 
+    CLM_FREQ_bin + JOB_imp, data = data, method="glm", family="binomial",
+    trControl = ctrl, tuneLength = 5)
+
+x_4<-as.data.frame(model_fit_rf[4])
+
+pred_rf = predict(model_fit_rf, newdata=testing)
+confusionMatrix(data=pred_rf, testing$TARGET_FLAG)
+
+```
+# Crossvalidation. 5. backward_rf
+```{r}
+model_fit_brf <- train(TARGET_FLAG ~ KIDSDRIV + AGE + PARENT1 + MSTATUS + 
+    EDUCATION + CAR_USE + CAR_TYPE + REVOKED + I(MVR_PTS^2) + 
+    URBANICITY + DO_KIDS_DRIVE + SQRT_TRAVTIME + SQRT_BLUEBOOK + 
+    OLDCLAIM + HOME_OWNER + CLM_FREQ_bool + INCOME + HOMEKIDS_bin + 
+    YOJ_bin + TIF_bin + CLM_FREQ + JOB_imp + TIF + AGE:SQRT_BLUEBOOK + 
+    AGE:CAR_TYPE + CAR_TYPE:SQRT_BLUEBOOK + OLDCLAIM:CLM_FREQ, data = data, method="glm", family="binomial",
+    trControl = ctrl, tuneLength = 5)
+
+x_5<-as.data.frame(model_fit_brf[4])
+
+pred_brf = predict(model_fit_brf, newdata=testing)
+confusionMatrix(data=pred_brf, testing$TARGET_FLAG)
+```
+#Model comparison 
+```{r}
+library(Metrics)
+library(broom)
+library(pscl)
+
+McR<- c(pR2(forward.lm)[4],
+        pR2(backward.lm)[4], 
+        pR2(stepwise)[4],
+        pR2(rf.m)[4],
+        pR2(backward_rf)[4])
+
+
+gl<- c(glance(forward.lm) %>%
+  dplyr::select(AIC, BIC, deviance),
+glance(backward.lm) %>%
+  dplyr::select(AIC, BIC, deviance),
+glance(stepwise) %>%
+  dplyr::select(AIC, BIC, deviance),
+glance(rf.m) %>%
+  dplyr::select(AIC, BIC, deviance),
+glance(backward_rf) %>%
+  dplyr::select(AIC, BIC, deviance))
+
+data$Model1Prediction <- predict(forward.lm, type = "response")
+data$Model2Prediction <- predict(backward.lm, type = "response")
+data$Model3Prediction <- predict(stepwise, type = "response")
+data$Model4Prediction <- predict(rf.m, type = "response")
+data$Model5Prediction <- predict(backward_rf, type = "response")
+
+
+ks<- c(ks_1<- ks_stat(actuals=data$TARGET_FLAG, predictedScores=data$Model1Prediction),
+ks_2<- ks_stat(actuals=data$TARGET_FLAG, predictedScores=data$Model2Prediction),
+ks_3<- ks_stat(actuals=data$TARGET_FLAG, predictedScores=data$Model3Prediction),
+ks_4<- ks_stat(actuals=data$TARGET_FLAG, predictedScores=data$Model4Prediction),
+ks_5<- ks_stat(actuals=data$TARGET_FLAG, predictedScores=data$Model5Prediction))
+
+pool<- matrix(gl, ncol=3,  byrow= TRUE)
+pool_2<- c(x[2:5], x_2[2:5], x_3[2:5], x_4[2:5], x_5[2:5])
+pool_3<-matrix(pool_2,  ncol =4,  byrow= TRUE)
+results <- cbind(pool,pool_3, ks, McR)
+rownames(results)<-c("forward.lm", "backward.lm", "stepwise", "RF_MLR", "backward_rf")
+colnames(results)<-c( "AIC", "BIC", "deviance","cv_Accuracy","cv_KAPPA", "cv_AccuracySD", "cv_KappaSD", "ks", "McFaddenR^2")
+kable(results, format = "html", row.names = TRUE) %>%
+kable_styling(bootstrap_options = c("striped"), full_width = F, font_size = 15)
+
+
+```
+#ROC and AUC
+```{r}
+library(Deducer)
+
+par(mfrow = c(2,3))
+rocplot(forward.lm)
+rocplot(backward.lm)
+rocplot(stepwise)
+rocplot(rf.m)
+rocplot(backward_rf)
+
+
+```
+
+# Model_fit. 
+```{r}
+par(mfrow= c(2, 3))
+
+plot(data$Model1Prediction, jitter(as.numeric(data$TARGET_FLAG), 0.5), cex = 0.5, ylab = "Jitter Target outcome. forward.lm")
+plot(data$Model2Prediction, jitter(as.numeric(data$TARGET_FLAG), 0.5), cex = 0.5, ylab = "Jitter Target outcome. backward.lm")
+plot(data$Model3Prediction, jitter(as.numeric(data$TARGET_FLAG), 0.5), cex = 0.5, ylab = "Jitter Target outcome. stepwise")
+plot(data$Model4Prediction, jitter(as.numeric(data$TARGET_FLAG), 0.5), cex = 0.5, ylab = "Jitter Target outcome. RF_MLR")
+plot(data$Model5Prediction, jitter(as.numeric(data$TARGET_FLAG), 0.5), cex = 0.5, ylab = "Jitter Target outcome. backward.lm")
+
+
+```
+# Stepwise (preferred model diagnostics) 
+```{r}
+vif(stepwise)
+sqrt(vif(stepwise)) > 2
+
+plot(stepwise, which = 4, id.n = 3)
+# Extract model results
+
+model.data <- augment(stepwise) %>% 
+  mutate(index = 1:n()) # Filter potential influential data points with abs(.std.res) > 3
+
+model.data %>% top_n(3, .cooksd)
+
+model.data %>% 
+  filter(abs(.std.resid) > 3)
+
+ggplot(model.data, aes(index, .std.resid)) + 
+  geom_point(aes(color = TARGET_FLAG), alpha = .5) +
+  theme_bw()
+
+
+```
+# Refit the model with influencial observations removed
+```{r}
+model_data<-data[-c(5101,7981),]
+stepwisemodel_2<- glm(TARGET_FLAG ~ KIDSDRIV + AGE + PARENT1 + 
+    HOME_VAL + MSTATUS + SEX + EDUCATION + CAR_USE + CAR_TYPE + RED_CAR + 
+    REVOKED + I(MVR_PTS^2) + CAR_AGE + URBANICITY + DO_KIDS_DRIVE + 
+    SQRT_TRAVTIME + SQRT_BLUEBOOK + CAR_AGE + OLDCLAIM + 
+    HOME_OWNER + CLM_FREQ_bool + risk_customer + INCOME_bin + 
+    HOMEKIDS_bin + YOJ_bin + TIF_bin + CLM_FREQ_bin + JOB_imp+ 
+    AGE*SQRT_BLUEBOOK+CAR_TYPE*AGE*SQRT_BLUEBOOK+ CAR_TYPE*RED_CAR, data = model_data, family = binomial)
+stepwise_2 <- stepAIC(stepwisemodel_2, direction = "both")
+summary(stepwise_2)
+AIC(stepwise_2)
+BIC(stepwise_2)
+
+
+```
+# Predict TARGET_AMT 
+```{r}
+data_2<- post_data[which(post_data$TARGET_AM!=0),]
+stepwise.lr <- lm(TARGET_AMT~.,  data = data_2)
+stepwise_lm <- stepAIC(stepwise.lr, direction = "both")
+summary(stepwise_lm)
+```
+# Test data processing 
+```{r}
+######## Same treatment on test data set ###########################
+# Need to make sure our data is understood correctly by R, since we have a mix of numerical and categorical
+str(post_data)
+test <- read.csv("logit_insurance_test.csv")
+
+test$INDEX <- as.factor(test$INDEX)
+test$TARGET_FLAG <- as.factor(test$TARGET_FLAG)
+test$SEX <- as.factor(test$SEX)
+test$EDUCATION <- as.factor(test$EDUCATION)
+test$PARENT1 <- as.factor(test$PARENT1)
+test$INCOME <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$INCOME)))
+test$HOME_VAL <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$HOME_VAL)))
+test$MSTATUS <- as.factor(test$MSTATUS)
+test$REVOKED <- as.factor(test$REVOKED)
+test$RED_CAR <- as.factor(ifelse(test$RED_CAR=="yes", 1, 0))
+test$URBANICITY <- ifelse(test$URBANICITY == "Highly Urban/ Urban", "Urban", "Rural")
+test$URBANICITY <- as.factor(test$URBANICITY)
+test$JOB <- as.factor(test$JOB)
+test$CAR_USE <- as.factor(test$CAR_USE)
+test$CAR_TYPE <- as.factor(test$CAR_TYPE)
+test$DO_KIDS_DRIVE <- as.factor(ifelse(test$KIDSDRIV > 0, 1, 0 ))
+test$OLDCLAIM <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$HOME_VAL)))
+test$BLUEBOOK <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", test$BLUEBOOK)))
+
+summary(test)#check NA's 
+pMiss <- function(x){sum(is.na(x))/length(x)*100}
+apply(test,2,pMiss)
+
+#impute NA's
+
+set.seed(10)
+
+r_carAge <- rpart(CAR_AGE ~ .,
+data=post_data[-1]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+carAge_PRED <- predict(r_carAge, test[is.na(test$CAR_AGE), ])
+test$CAR_AGE[is.na(test$CAR_AGE)]= carAge_PRED
+
+r_YOJ <- rpart(YOJ ~ .,
+data=post_data[-1]
+,method="anova", na.action=na.omit,control = rpart.control(cp = 0.0001))
+YOJ_PRED <- predict(r_YOJ, test[is.na(test$YOJ), ])
+test$YOJ[is.na(test$YOJ)]= YOJ_PRED
+
+r_INCOME <- rpart(INCOME ~ .,
+data=post_data[-1]
+,method="anova", na.action=na.omit,control = rpart.control(cp = 0.0001))
+INCOME_PRED <- predict(r_INCOME, test[is.na(test$INCOME), ])
+test$INCOME[is.na(test$INCOME)]= INCOME_PRED
+
+r_HOME_VAL<- rpart(HOME_VAL ~ .,
+data=post_data[-1]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+HOME_VAL_PRED <- predict(r_HOME_VAL, test[is.na(test$HOME_VAL), ])
+test$HOME_VAL[is.na(test$HOME_VAL)]= HOME_VAL_PRED
+
+r_OLDCLAIM<- rpart(OLDCLAIM ~ .,
+data=post_data[-1]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+OLDCLAIM_PRED <- predict(r_OLDCLAIM, test[is.na(test$OLDCLAIM), ])
+test$OLDCLAIM[is.na(test$OLDCLAIM)]= OLDCLAIM_PRED
+
+r_AGE<- rpart(AGE ~ .,
+data=post_data[,-1]
+,method="anova", na.action=na.omit,control = rpart.control(cp =0.0001))
+AGE_PRED <- predict(r_AGE, test[is.na(test$AGE), ])
+test$AGE[is.na(test$AGE)]= AGE_PRED
+
+apply(test, 2, function(x) sum(is.na(x))) # check if NA's are gone 
+
+#TRANSFORMATION
+test$SQRT_TRAVTIME <- sqrt(test$TRAVTIME)
+test$SQRT_BLUEBOOK <- sqrt(test$BLUEBOOK)
+test$CAR_AGE_norm<- (test$CAR_AGE-min(test$CAR_AGE))/(max(test$CAR_AGE)-min(test$CAR_AGE))
+test$OLDCLAIM_norm<-(test$OLDCLAIM-min(test$OLDCLAIM))/(max(test$OLDCLAIM)-min(test$OLDCLAIM))
+test$HOME_OWNER <- ifelse(test$HOME_VAL == 0, 0, 1)
+test$CLM_FREQ_bool<- ifelse(test$CLM_FREQ == 0, 0, 1)
+test$risk_customer<- ifelse(test$TIF<= 5 & test$CLM_FREQ>0,1,0)
+
+#Bin variables 
+
+# Bin Income
+
+test$INCOME_bin[test$INCOME == 0] <- "Zero"
+test$INCOME_bin[test$INCOME >= 1 & test$INCOME < 30000] <- "Low"
+test$INCOME_bin[test$INCOME >= 30000 & test$INCOME < 80000] <- "Medium"
+test$INCOME_bin[test$INCOME >= 80000] <- "High"
+test$INCOME_bin <- factor(test$INCOME_bin)
+test$INCOME_bin <- factor(test$INCOME_bin, levels=c("Zero","Low","Medium","High"))
+summary(test$INCOME_bin)
+
+#Bin HOME_KIDS 
+
+test$HOMEKIDS_bin[test$HOMEKIDS == 0] <- "Zero"
+test$HOMEKIDS_bin[test$HOMEKIDS >= 1 & test$HOMEKIDS <=2] <- "1 or 2"
+test$HOMEKIDS_bin[test$HOMEKIDS > 2] <- "More_than_2"
+test$HOMEKIDS_bin <- factor(test$HOMEKIDS_bin)
+test$HOMEKIDS_bin <- factor(test$HOMEKIDS_bin, levels=c("Zero","1 or 2","More_than_2"))
+summary(test$HOMEKIDS_bin)
+
+#Bin YOJ 
+
+test$YOJ_bin[test$YOJ == 0] <- "Less than year"
+test$YOJ_bin[test$YOJ >= 1 & test$YOJ <= 10] <- "1-10 years"
+test$YOJ_bin[test$YOJ > 10 & test$YOJ < 13] <- "11-12 years"
+test$YOJ_bin[test$YOJ >= 13] <-"13 or more years"
+test$YOJ_bin <- factor(test$YOJ_bin)
+test$YOJ_bin <- factor(test$YOJ_bin, levels=c("Less than year","1-10 years","11-12 years","13 or more years"))
+summary(test$YOJ_bin)
+
+#Bin TIF 
+
+test$TIF_bin[test$TIF > 0 & test$TIF <= 1] <-"Z_NEW_Customer"
+test$TIF_bin[test$TIF > 1 & test$TIF < 7] <-"1-6yr_customer"
+test$TIF_bin[test$TIF >= 7]<-"7 or more yr"
+test$TIF_bin <- factor(test$TIF_bin)
+test$TIF_bin <- factor(test$TIF_bin, levels=c("Z_NEW_Customer","1-6yr_customer","7 or more yr"))
+summary(test$TIF_bin)
+
+
+#Bin CLM_FREQ
+
+test$CLM_FREQ_bin[test$CLM_FREQ == 0] <- "Z_NONE"
+test$CLM_FREQ_bin[test$CLM_FREQ == 1] <- "ONE"
+test$CLM_FREQ_bin[test$CLM_FREQ ==2] <- "TWO"
+test$CLM_FREQ_bin[test$CLM_FREQ >=3] <-"3 or more clm"
+test$CLM_FREQ_bin <- factor(test$CLM_FREQ_bin)
+test$CLM_FREQ_bin <- factor(test$CLM_FREQ_bin,levels=c("Z_NONE","ONE","TWO","3 or more clm"))
+summary(test$CLM_FREQ_bin)
+
+# Regroup JOB variable  
+test$JOB_imp<- combineLevels(test$JOB, levs = c("Doctor", "Lawyer"), newLabel= "White Collar")
+levels(test$JOB_imp)[1] <-"OTHER"
+summary(test$JOB_imp)
+
+
+```
+# Score Data 
+```{r}
+# Cofficients of model 
+coef(stepwise_2)
+########### STAND ALONE SCORING PROGRAM ###############
+test$P_TARGET_FLAG <- predict(stepwise_2, newdata = test, type = "response")
+P_TARGET <- predict(stepwise_lm, newdata = test)
+test$P_TARGET_AMT<- test$P_TARGET_FLAG*P_TARGET
+
+write.xlsx(scores , file = "write.xlsx", sheetName = "Predictions",
+           col.names = TRUE)
+
+# Scored Data File
+scores <- test[c("INDEX","P_TARGET_FLAG", "P_TARGET_AMT")]
+write.csv(scores, file = "CI_Scored.csv")
+
+```
+
